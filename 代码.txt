@@ -1,0 +1,151 @@
+运行代码
+import machine
+import time
+import network
+import socket
+
+# 设置引脚
+IN1_PIN = machine.Pin(13, machine.Pin.OUT)
+IN2_PIN = machine.Pin(12, machine.Pin.OUT)
+ENA_PIN = machine.Pin(14, machine.Pin.OUT)
+
+# 初始化PWM
+ENA = machine.PWM(ENA_PIN)
+ENA.freq(1000)
+
+# 控制风扇转动的函数
+def fan_control(speed):
+    # 设置风扇转动方向
+    if speed > 0:
+        IN1_PIN.on()
+        IN2_PIN.off()
+    else:
+        IN1_PIN.off()
+        IN2_PIN.on()
+    
+    # 设置风扇转速
+    duty = int(abs(speed) * 1023)
+    ENA.duty(duty)
+
+# 设置风扇转速为50%
+fan_speed = 0.5
+
+# 控制风扇转动
+fan_control(fan_speed)
+
+# 连接WiFi网络
+sta_if = network.WLAN(network.STA_IF)
+sta_if.active(True)  # 激活WiFi
+sta_if.connect("帮主", "love052219")  # 输入你的WiFi SSID和密码
+
+# 获取本机IP地址
+ip_address = sta_if.ifconfig()[0]
+
+# 创建TCP套接字
+sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+# 绑定IP地址和端口
+sock.bind((ip_address, 1234))  # 设置监听端口为1234
+
+# 开始监听
+sock.listen(1)
+print('等待连接...')
+
+# 接收和处理客户端的命令
+while True:
+    client, addr = sock.accept()
+    print('客户端已连接：', addr)
+    
+    # 接收命令
+    headers = b""
+    while b"\r\n\r\n" not in headers:
+        headers += client.recv(1024)
+    headers_str = headers.decode()
+
+    # 切割请求体
+    body_start = headers_str.find("\r\n\r\n") + 4
+    body = headers_str[body_start:].strip()
+
+    # 提取命令内容
+    command = body
+
+    # 处理命令
+    if command == 'on':
+        fan_control(fan_speed)
+        response = '风扇已打开'
+    elif command == 'off':
+        fan_control(0)
+        response = '风扇已关闭'
+    elif command.startswith('speed'):
+        speed_command, speed_value = command.split(':')
+        fan_speed = float(speed_value)
+        fan_control(fan_speed)
+        response = f'风扇速度设置为 {fan_speed}'
+    else:
+        response = '无效命令'
+    
+    # 发送响应
+    client.send(response.encode())
+    
+    # 关闭连接
+    client.close()
+
+
+查找esp32的ip地址的代码
+import network
+import socket
+import time
+from machine import Pin, PWM
+
+def set_speed(speed):
+    pwm = PWM(Pin(16), freq=5000, duty=(1023 - speed) / 10.23)
+    pwm.deinit()
+    
+def connect_wifi(ssid, password):
+    station = network.WLAN(network.STA_IF)
+    station.active(True)
+    station.connect(ssid, password)
+    while not station.isconnected():
+        pass
+    print("Connected")
+    print(station.ifconfig())
+    
+def start_server():
+    server = socket.socket()
+    server.bind(('0.0.0.0', 80))
+    server.listen(1)
+    print("等待连接...")
+    client_sock, client_addr = server.accept()
+    print('已连接：', client_addr)
+    return client_sock
+    
+def set_fan_speed(speed):
+    if speed == 0:
+        fan_pwm.duty(0)
+        motor_pwm.duty(0)
+    else:
+        fan_pwm.duty(int(speed * 4.25))
+        motor_pwm.duty(int(speed * 4.25))
+    
+
+wifi_ssid = '帮主'
+wifi_password = 'love052219'
+
+connect_wifi(wifi_ssid, wifi_password)
+
+fan_pwm = PWM(Pin(23), freq=25000, duty=0)
+motor_pwm = PWM(Pin(5), freq=25000, duty=0)
+
+while True:
+    client_sock = start_server()
+    data = client_sock.recv(1024)
+    if (data != None):
+        data = data.decode('utf-8')
+        try:
+            speed = int(data)
+            set_speed(speed)
+            set_fan_speed(speed)
+            client_sock.sendall('控制成功'.encode('utf-8'))
+        except ValueError:
+            client_sock.sendall('输入有误'.encode('utf-8'))
+    client_sock.close()
